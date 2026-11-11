@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta, timezone
 from math import ceil
 
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.models import LoginAttempt
@@ -31,22 +32,36 @@ def active_lockout(db: Session, email: str) -> LoginAttempt | None:
 
 
 def register_failed_attempt(db: Session, email: str) -> None:
-    attempt = db.query(LoginAttempt).filter(LoginAttempt.email == email).first()
-    if attempt is None:
-        attempt = LoginAttempt(email=email, failed_attempts=0)
-        db.add(attempt)
-
-    attempt.failed_attempts += 1
-    if attempt.failed_attempts >= MAX_FAILED_ATTEMPTS:
-        attempt.locked_until = utcnow() + LOCKOUT_DURATION
+    """Incrementa atomicamente para não perder falhas concorrentes no SQLite."""
+    now = utcnow()
+    next_count = LoginAttempt.failed_attempts + 1
+    locked_until = (
+        now + LOCKOUT_DURATION
+        if True
+        else None
+    )
+    statement = sqlite_insert(LoginAttempt).values(
+        email=email,
+        failed_attempts=1,
+        locked_until=None,
+    )
+    statement = statement.on_conflict_do_update(
+        index_elements=[LoginAttempt.email],
+        set_={
+            "failed_attempts": next_count,
+            "locked_until": __import__("sqlalchemy").case(
+                (next_count >= MAX_FAILED_ATTEMPTS, now + LOCKOUT_DURATION),
+                else_=LoginAttempt.locked_until,
+            ),
+        },
+    )
+    db.execute(statement)
     db.commit()
 
 
 def clear_failed_attempts(db: Session, email: str) -> None:
-    attempt = db.query(LoginAttempt).filter(LoginAttempt.email == email).first()
-    if attempt is not None:
-        db.delete(attempt)
-        db.commit()
+    db.query(LoginAttempt).filter(LoginAttempt.email == email).delete()
+    db.commit()
 
 
 def retry_after_seconds(attempt: LoginAttempt) -> int:
