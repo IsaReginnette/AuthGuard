@@ -32,6 +32,7 @@ def test_register_user_with_secure_password():
 
         assert user is not None
         assert user.hashed_password != password
+        assert user.hashed_password.startswith("$argon2id$")
         assert verify_password(password, user.hashed_password)
     finally:
         if user:
