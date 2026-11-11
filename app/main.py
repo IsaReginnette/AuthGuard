@@ -3,10 +3,16 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from app.database import Base, engine, get_db
-from app.models import User, UserSession
+from app.models import User
 from app.schemas import UserCreate, UserResponse, LoginRequest, LoginResponse
 from app.security import hash_password, verify_password
 from app.session_auth import create_session, get_session_user, SESSION_TTL_SECONDS
+from app.lockout import (
+    active_lockout,
+    clear_failed_attempts,
+    register_failed_attempt,
+    retry_after_seconds,
+)
 
 Base.metadata.create_all(bind=engine)
 
@@ -54,13 +60,25 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
 
 @app.post("/login", response_model=LoginResponse)
 def login(credentials: LoginRequest, db: Session = Depends(get_db)):
+    lockout = active_lockout(db, credentials.email)
+    if lockout is not None:
+        retry_after = retry_after_seconds(lockout)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Conta temporariamente bloqueada. Tente novamente após o período de bloqueio.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
     user = db.query(User).filter(User.email == credentials.email).first()
     if user is None or not verify_password(credentials.password, user.hashed_password):
+        register_failed_attempt(db, credentials.email)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciais inválidas.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    clear_failed_attempts(db, credentials.email)
     token = create_session(db, user)
     return LoginResponse(access_token=token, expires_in=SESSION_TTL_SECONDS)
 
