@@ -32,7 +32,7 @@ API de autenticação desenvolvida em Python com FastAPI. O AuthGuard permite ca
 | POST | `/login` | Autentica e retorna um token Bearer |
 | GET | `/me` | Retorna os dados do usuário autenticado |
 
-A documentação interativa dos endpoints fica disponível em `/docs) quando a API está em execução.
+A documentação interativa dos endpoints fica disponível em `/docs` quando a API está em execução.
 
 ## Estrutura do projeto
 
