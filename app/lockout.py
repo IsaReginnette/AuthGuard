@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta, timezone
 from math import ceil
 
+from sqlalchemy import case
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
@@ -35,11 +36,6 @@ def register_failed_attempt(db: Session, email: str) -> None:
     """Incrementa atomicamente para não perder falhas concorrentes no SQLite."""
     now = utcnow()
     next_count = LoginAttempt.failed_attempts + 1
-    locked_until = (
-        now + LOCKOUT_DURATION
-        if True
-        else None
-    )
     statement = sqlite_insert(LoginAttempt).values(
         email=email,
         failed_attempts=1,
@@ -49,7 +45,7 @@ def register_failed_attempt(db: Session, email: str) -> None:
         index_elements=[LoginAttempt.email],
         set_={
             "failed_attempts": next_count,
-            "locked_until": __import__("sqlalchemy").case(
+            "locked_until": case(
                 (next_count >= MAX_FAILED_ATTEMPTS, now + LOCKOUT_DURATION),
                 else_=LoginAttempt.locked_until,
             ),
