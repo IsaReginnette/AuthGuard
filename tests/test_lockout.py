@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app import lockout
 from app.database import SessionLocal
 from app.main import app
-from app.models import LoginAttempt, User
+from app.models import LoginAttempt, User, UserSession
 
 client = TestClient(app)
 
@@ -16,6 +16,7 @@ def test_account_is_locked_for_ten_minutes_after_three_failed_attempts(monkeypat
     password = "SenhaSegura123"
     registered = client.post("/register", json={"email": email, "password": password})
     assert registered.status_code == 201
+    user_id = registered.json()["id"]
 
     now = datetime(2030, 1, 1, 12, 0, 0)
     monkeypatch.setattr(lockout, "utcnow", lambda: now)
@@ -50,6 +51,7 @@ def test_account_is_locked_for_ten_minutes_after_three_failed_attempts(monkeypat
     finally:
         db = SessionLocal()
         try:
+            db.query(UserSession).filter(UserSession.user_id == user_id).delete()
             db.query(LoginAttempt).filter(LoginAttempt.email == email).delete()
             db.query(User).filter(User.email == email).delete()
             db.commit()
