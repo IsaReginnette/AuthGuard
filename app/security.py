@@ -13,3 +13,7 @@ def verify_password(password: str, hashed_password: str) -> bool:
     """Confere se a senha corresponde ao hash armazenado."""
     return password_hash.verify(password, hashed_password)
 
+
+# Hash válido para fazer verificação também quando o e-mail não existe.
+# Evita que uma conta existente seja identificada por diferenças óbvias de tempo.
+DUMMY_HASH = hash_password("senha-artificial-usada-apenas-para-verificacao")

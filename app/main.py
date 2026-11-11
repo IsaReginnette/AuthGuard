@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.database import Base, engine, get_db
 from app.models import User, UserSession
 from app.schemas import UserCreate, UserResponse, LoginRequest, LoginResponse
-from app.security import hash_password, verify_password
+from app.security import hash_password, verify_password, DUMMY_HASH
 from app.session_auth import create_session, get_session_user, SESSION_TTL_SECONDS
 
 Base.metadata.create_all(bind=engine)
@@ -55,7 +55,10 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
 @app.post("/login", response_model=LoginResponse)
 def login(credentials: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == credentials.email).first()
-    if user is None or not verify_password(credentials.password, user.hashed_password):
+    # Executa Argon2 para ambos os casos; nunca diferencia e-mail e senha inválidos.
+    stored_hash = user.hashed_password if user is not None else DUMMY_HASH
+    password_matches = verify_password(credentials.password, stored_hash)
+    if user is None or not password_matches:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciais inválidas.",
