@@ -91,7 +91,7 @@ Na raiz do projeto, execute a suíte automatizada completa:
 pytest -v
 ```
 
-Os testes cobrem cadastro seguro e hash de senha (T1), login válido (T2), credenciais incorretas (T3), validação de e-mail antes de consultas ao banco (T4), bloqueio após três tentativas inválidas (T5) e rejeição de senhas curtas (T6).
+Nesta branch, os testes disponíveis incluem o cadastro seguro e o hash de senha (T1), a rejeição de senhas curtas (T6) e a verificação de disponibilidade da API. Os testes de login válido (T2), credenciais incorretas (T3), validação de e-mail antes de consultas ao banco (T4) e bloqueio após três tentativas inválidas (T5) dependem da integração das PRs #11, #12, #13 e #14, respectivamente. Após a integração dessas PRs, execute novamente `pytest -v` para validar a suíte completa.
 
 ## Segurança
 
