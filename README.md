@@ -88,7 +88,7 @@ Com a API em execução, acesse http://127.0.0.1:8000/docs.
 Na raiz do projeto, execute a suíte automatizada completa:
 
 ```bash
-python -m pytest -v
+pytest -v
 ```
 
 Os testes cobrem cadastro seguro e hash de senha (T1), login válido (T2), credenciais incorretas (T3), validação de e-mail antes de consultas ao banco (T4), bloqueio após três tentativas inválidas (T5) e rejeição de senhas curtas (T6).
