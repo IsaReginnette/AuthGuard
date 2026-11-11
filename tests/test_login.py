@@ -1,7 +1,9 @@
+from datetime import timedelta
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from app import session_auth
 from app.database import SessionLocal
 from app.main import app
 from app.models import User, UserSession
@@ -46,6 +48,39 @@ def test_valid_login_creates_usable_bearer_session():
             db.close()
 
 
-def test_invalid_or_expired_session_is_rejected(monkeypatch):
+def test_invalid_session_is_rejected():
     assert client.get("/me").status_code == 401
     assert client.get("/me", headers={"Authorization": "Bearer token-invalido"}).status_code == 401
+
+
+def test_expired_session_is_rejected(monkeypatch):
+    email = f"{uuid4().hex}@authguard.com"
+    password = "SenhaSegura123"
+    registered = client.post("/register", json={"email": email, "password": password})
+    assert registered.status_code == 201
+    user_id = registered.json()["id"]
+
+    try:
+        response = client.post("/login", json={"email": email, "password": password})
+        assert response.status_code == 200
+        headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
+        assert client.get("/me", headers=headers).status_code == 200
+
+        db = SessionLocal()
+        try:
+            saved = db.query(UserSession).filter(UserSession.user_id == user_id).one()
+            expired_at = saved.expires_at
+        finally:
+            db.close()
+
+        # Avança o relógio da validação para além da validade armazenada.
+        monkeypatch.setattr(session_auth, "utcnow", lambda: expired_at + timedelta(seconds=1))
+        assert client.get("/me", headers=headers).status_code == 401
+    finally:
+        db = SessionLocal()
+        try:
+            db.query(UserSession).filter(UserSession.user_id == user_id).delete()
+            db.query(User).filter(User.email == email).delete()
+            db.commit()
+        finally:
+            db.close()
