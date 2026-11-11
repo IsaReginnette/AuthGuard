@@ -7,6 +7,7 @@ from app.models import User, UserSession
 from app.schemas import UserCreate, UserResponse, LoginRequest, LoginResponse
 from app.security import hash_password, verify_password, DUMMY_HASH
 from app.session_auth import create_session, get_session_user, SESSION_TTL_SECONDS
+from app.lockout import begin_login_transaction, is_locked, record_failed_login, clear_failed_logins
 
 Base.metadata.create_all(bind=engine)
 
@@ -54,16 +55,32 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
 
 @app.post("/login", response_model=LoginResponse)
 def login(credentials: LoginRequest, db: Session = Depends(get_db)):
+    # SQLite: impede condição de corrida entre tentativas simultâneas de login.
+    begin_login_transaction(db)
+    if is_locked(db, credentials.email):
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Muitas tentativas de acesso. Tente novamente mais tarde.",
+        )
+
     user = db.query(User).filter(User.email == credentials.email).first()
-    # Executa Argon2 para ambos os casos; nunca diferencia e-mail e senha inválidos.
     stored_hash = user.hashed_password if user is not None else DUMMY_HASH
     password_matches = verify_password(credentials.password, stored_hash)
     if user is None or not password_matches:
+        blocked = record_failed_login(db, credentials.email)
+        if blocked:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Muitas tentativas de acesso. Tente novamente mais tarde.",
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciais inválidas.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    clear_failed_logins(db, credentials.email)
     token = create_session(db, user)
     return LoginResponse(access_token=token, expires_in=SESSION_TTL_SECONDS)
 
