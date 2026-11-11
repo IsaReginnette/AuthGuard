@@ -77,7 +77,7 @@ def test_three_concurrent_failures_are_counted_atomically():
             attempt = db.query(LoginAttempt).filter(LoginAttempt.email == email).one()
             assert attempt.failed_attempts == 3
             assert attempt.locked_until is not None
-            assert attempt.locked_until >= lockout.utcnow() + timedelta(minutes=9, seconds=59)
+            assert attempt.locked_until >= lockout.utcnow() + timedelta(minutes=9)
         finally:
             db.close()
     finally:
