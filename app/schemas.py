@@ -14,7 +14,8 @@ class UserResponse(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: str
+    # EmailStr valida o corpo da requisição antes de qualquer consulta SQL.
+    email: EmailStr
     password: str
 
 
