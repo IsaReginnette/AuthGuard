@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from uuid import uuid4
 
@@ -101,5 +102,39 @@ def test_expired_lock_starts_new_failure_count(monkeypatch):
             assert state.locked_until is None
         finally:
             db.close()
+    finally:
+        cleanup(email)
+
+
+def test_simultaneous_password_failures_are_counted_atomically():
+    """Três falhas concorrentes devem produzir um único bloqueio sem perda de incrementos."""
+    email = f"{uuid4().hex}@authguard.com"
+    password = "SenhaSegura123"
+    assert client.post("/register", json={"email": email, "password": password}).status_code == 201
+
+    def wrong_login(_):
+        # Um cliente por worker evita compartilhar estado de transporte entre threads.
+        with TestClient(app) as worker_client:
+            return worker_client.post(
+                "/login", json={"email": email, "password": "senha-errada"}
+            ).status_code
+
+    try:
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            statuses = list(executor.map(wrong_login, range(3)))
+
+        assert sorted(statuses) == [401, 401, 429]
+        db = SessionLocal()
+        try:
+            state = db.get(LoginLockout, lockout.email_key(email))
+            assert state is not None
+            assert state.failed_attempts == 3
+            assert state.locked_until is not None
+        finally:
+            db.close()
+
+        assert client.post(
+            "/login", json={"email": email, "password": password}
+        ).status_code == 429
     finally:
         cleanup(email)
