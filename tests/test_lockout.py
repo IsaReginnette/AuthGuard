@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from uuid import uuid4
 
@@ -33,12 +34,10 @@ def test_account_is_locked_for_ten_minutes_after_three_failed_attempts(monkeypat
         assert blocked.status_code == 429
         assert blocked.headers["retry-after"] == "600"
 
-        # O acesso correto continua bloqueado até completar os dez minutos.
         monkeypatch.setattr(lockout, "utcnow", lambda: now + timedelta(minutes=9, seconds=59))
         still_blocked = client.post("/login", json={"email": email, "password": password})
         assert still_blocked.status_code == 429
 
-        # Após dez minutos, a autenticação volta a funcionar.
         monkeypatch.setattr(lockout, "utcnow", lambda: now + timedelta(minutes=10, seconds=1))
         unlocked = client.post("/login", json={"email": email, "password": password})
         assert unlocked.status_code == 200
@@ -54,6 +53,37 @@ def test_account_is_locked_for_ten_minutes_after_three_failed_attempts(monkeypat
             db.query(UserSession).filter(UserSession.user_id == user_id).delete()
             db.query(LoginAttempt).filter(LoginAttempt.email == email).delete()
             db.query(User).filter(User.email == email).delete()
+            db.commit()
+        finally:
+            db.close()
+
+
+def test_three_concurrent_failures_are_counted_atomically():
+    email = f"{uuid4().hex}@authguard.com"
+
+    def record_failure():
+        db = SessionLocal()
+        try:
+            lockout.register_failed_attempt(db, email)
+        finally:
+            db.close()
+
+    try:
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            list(executor.map(lambda _: record_failure(), range(3)))
+
+        db = SessionLocal()
+        try:
+            attempt = db.query(LoginAttempt).filter(LoginAttempt.email == email).one()
+            assert attempt.failed_attempts == 3
+            assert attempt.locked_until is not None
+            assert attempt.locked_until >= lockout.utcnow() + timedelta(minutes=9, seconds=59)
+        finally:
+            db.close()
+    finally:
+        db = SessionLocal()
+        try:
+            db.query(LoginAttempt).filter(LoginAttempt.email == email).delete()
             db.commit()
         finally:
             db.close()
