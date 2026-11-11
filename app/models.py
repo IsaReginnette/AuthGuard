@@ -17,3 +17,12 @@ class UserSession(Base):
     token_hash = Column(String(64), primary_key=True)
     user_id = Column(Integer, nullable=False, index=True)
     expires_at = Column(DateTime, nullable=False)
+
+
+class LoginAttempt(Base):
+    """Controle persistente de falhas e bloqueio temporário por e-mail."""
+    __tablename__ = "login_attempts"
+
+    email = Column(String, primary_key=True)
+    failed_attempts = Column(Integer, nullable=False, default=0)
+    locked_until = Column(DateTime, nullable=True)

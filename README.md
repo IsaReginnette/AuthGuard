@@ -19,8 +19,8 @@ API de autenticação desenvolvida em Python com FastAPI. O AuthGuard permite ca
 - Login com credenciais válidas e emissão de token Bearer.
 - Consulta do usuário autenticado pelo endpoint `GET /me`.
 - Resposta genérica para credenciais inválidas, sem revelar se o e-mail existe.
-- Validação do e-mail antes de qualquer consulta ao banco de dados.
 - Bloqueio por 10 minutos após 3 tentativas consecutivas de autenticação inválidas.
+- Reinicialização do contador após autenticação bem-sucedida ou término do bloqueio.
 - Respostas da API sem exposição de senha, hash ou token armazenado.
 
 ## Endpoints principais
@@ -48,7 +48,6 @@ AuthGuard/
 │   └── session_auth.py
 ├── tests/
 │   ├── test_api.py
-│   ├── test_email_validation.py
 │   ├── test_lockout.py
 │   ├── test_login.py
 │   └── test_register.py
@@ -91,14 +90,15 @@ Na raiz do projeto, execute a suíte automatizada completa:
 pytest -v
 ```
 
-Nesta branch, os testes disponíveis incluem o cadastro seguro e o hash de senha (T1), a rejeição de senhas curtas (T6) e a verificação de disponibilidade da API. Os testes de login válido (T2), credenciais incorretas (T3), validação de e-mail antes de consultas ao banco (T4) e bloqueio após três tentativas inválidas (T5) dependem da integração das PRs #11, #12, #13 e #14, respectivamente. Após a integração dessas PRs, execute novamente `pytest -v` para validar a suíte completa.
+A suíte cobre o cadastro seguro, a rejeição de senhas curtas e e-mails inválidos, o login válido e inválido, a validade das sessões, o endpoint de disponibilidade da API e o bloqueio temporário após três tentativas incorretas.
 
 ## Segurança
 
 - Senhas são armazenadas somente como hashes Argon2id.
 - Tokens de sessão são gerados de forma aleatória; somente seu hash é persistido.
 - Respostas de autenticação não informam se o e-mail ou a senha está incorreto.
-- O bloqueio temporário limita tentativas consecutivas de autenticação.
+- Após três falhas consecutivas, novas tentativas são recusadas por dez minutos.
+- O contador de falhas é limpo após login bem-sucedido.
 
 ## Equipe
 

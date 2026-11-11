@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app import session_auth
 from app.database import SessionLocal
 from app.main import app
-from app.models import User, UserSession
+from app.models import LoginAttempt, User, UserSession
 
 client = TestClient(app)
 
@@ -42,7 +42,47 @@ def test_valid_login_creates_usable_bearer_session():
         db = SessionLocal()
         try:
             db.query(UserSession).filter(UserSession.user_id == registered.json()["id"]).delete()
+            db.query(LoginAttempt).filter(LoginAttempt.email == email).delete()
             db.query(User).filter(User.email == email).delete()
+            db.commit()
+        finally:
+            db.close()
+
+
+def test_invalid_credentials_are_rejected_without_revealing_user_existence():
+    registered_email = f"{uuid4().hex}@authguard.com"
+    unknown_email = f"{uuid4().hex}@authguard.com"
+    password = "SenhaSegura123"
+    registered = client.post(
+        "/register",
+        json={"email": registered_email, "password": password},
+    )
+    assert registered.status_code == 201
+
+    try:
+        wrong_password = client.post(
+            "/login",
+            json={"email": registered_email, "password": "SenhaErrada123"},
+        )
+        unknown_user = client.post(
+            "/login",
+            json={"email": unknown_email, "password": "SenhaErrada123"},
+        )
+
+        # O comportamento observável é idêntico nos dois cenários.
+        assert wrong_password.status_code == unknown_user.status_code == 401
+        assert wrong_password.json() == unknown_user.json() == {
+            "detail": "Credenciais inválidas."
+        }
+        assert wrong_password.headers["www-authenticate"] == "Bearer"
+        assert unknown_user.headers["www-authenticate"] == "Bearer"
+    finally:
+        db = SessionLocal()
+        try:
+            db.query(LoginAttempt).filter(
+                LoginAttempt.email.in_([registered_email, unknown_email])
+            ).delete(synchronize_session=False)
+            db.query(User).filter(User.email == registered_email).delete()
             db.commit()
         finally:
             db.close()
@@ -73,13 +113,13 @@ def test_expired_session_is_rejected(monkeypatch):
         finally:
             db.close()
 
-        # Avança o relógio da validação para além da validade armazenada.
         monkeypatch.setattr(session_auth, "utcnow", lambda: expired_at + timedelta(seconds=1))
         assert client.get("/me", headers=headers).status_code == 401
     finally:
         db = SessionLocal()
         try:
             db.query(UserSession).filter(UserSession.user_id == user_id).delete()
+            db.query(LoginAttempt).filter(LoginAttempt.email == email).delete()
             db.query(User).filter(User.email == email).delete()
             db.commit()
         finally:
