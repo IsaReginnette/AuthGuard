@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app import session_auth
 from app.database import SessionLocal
 from app.main import app
-from app.models import User, UserSession
+from app.models import LoginAttempt, User, UserSession
 
 client = TestClient(app)
 
@@ -42,6 +42,28 @@ def test_valid_login_creates_usable_bearer_session():
         db = SessionLocal()
         try:
             db.query(UserSession).filter(UserSession.user_id == registered.json()["id"]).delete()
+            db.query(LoginAttempt).filter(LoginAttempt.email == email).delete()
+            db.query(User).filter(User.email == email).delete()
+            db.commit()
+        finally:
+            db.close()
+
+
+def test_invalid_credentials_are_rejected_without_revealing_user_existence():
+    email = f"{uuid4().hex}@authguard.com"
+    password = "SenhaSegura123"
+    registered = client.post("/register", json={"email": email, "password": password})
+    assert registered.status_code == 201
+
+    try:
+        response = client.post("/login", json={"email": email, "password": "SenhaErrada123"})
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Credenciais inválidas."
+        assert response.headers["www-authenticate"] == "Bearer"
+    finally:
+        db = SessionLocal()
+        try:
+            db.query(LoginAttempt).filter(LoginAttempt.email == email).delete()
             db.query(User).filter(User.email == email).delete()
             db.commit()
         finally:
@@ -80,6 +102,7 @@ def test_expired_session_is_rejected(monkeypatch):
         db = SessionLocal()
         try:
             db.query(UserSession).filter(UserSession.user_id == user_id).delete()
+            db.query(LoginAttempt).filter(LoginAttempt.email == email).delete()
             db.query(User).filter(User.email == email).delete()
             db.commit()
         finally:
