@@ -14,7 +14,8 @@ class UserResponse(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: str
+    # Valida o formato antes de executar a lógica de autenticação ou consultas SQL.
+    email: EmailStr
     password: str
 
 

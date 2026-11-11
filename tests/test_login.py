@@ -2,6 +2,7 @@ from datetime import timedelta
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 from app import session_auth
 from app.database import SessionLocal
@@ -9,6 +10,20 @@ from app.main import app
 from app.models import LoginAttempt, User, UserSession
 
 client = TestClient(app)
+
+
+def test_invalid_login_email_is_rejected_before_database_query(monkeypatch):
+    def fail_if_query_runs(*args, **kwargs):
+        raise AssertionError("Consulta ao banco não deveria ocorrer para e-mail inválido.")
+
+    monkeypatch.setattr(Session, "query", fail_if_query_runs)
+
+    for email in ("", "email-invalido"):
+        response = client.post(
+            "/login",
+            json={"email": email, "password": "SenhaSegura123"},
+        )
+        assert response.status_code == 422
 
 
 def test_valid_login_creates_usable_bearer_session():
