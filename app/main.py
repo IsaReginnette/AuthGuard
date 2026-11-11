@@ -14,6 +14,10 @@ from app.lockout import (
     retry_after_seconds,
 )
 
+# Hash dummy com o mesmo algoritmo/custo para evitar diferença de tempo
+# entre e-mail cadastrado e não cadastrado.
+DUMMY_PASSWORD_HASH = hash_password("AuthGuard-dummy-password-never-used")
+
 Base.metadata.create_all(bind=engine)
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -70,7 +74,18 @@ def login(credentials: LoginRequest, db: Session = Depends(get_db)):
         )
 
     user = db.query(User).filter(User.email == credentials.email).first()
-    if user is None or not verify_password(credentials.password, user.hashed_password):
+    if user is None:
+        # Executa Argon2 também para usuários inexistentes, reduzindo
+        # a possibilidade de inferir a existência do e-mail pelo tempo.
+        verify_password(credentials.password, DUMMY_PASSWORD_HASH)
+        register_failed_attempt(db, credentials.email)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciais inválidas.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not verify_password(credentials.password, user.hashed_password):
         register_failed_attempt(db, credentials.email)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
